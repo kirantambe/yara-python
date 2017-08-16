@@ -1629,7 +1629,6 @@ static PyObject* Rules_getattro(
   return PyObject_GenericGetAttr(self, name);
 }
 
-
 void raise_exception_on_error(
     int error_level,
     const char* file_name,
@@ -1650,6 +1649,29 @@ void raise_exception_on_error(
       PyErr_Format(
           YaraSyntaxError,
           "line %d: %s",
+          line_number,
+          message);
+  }
+}
+
+void print_exception_on_error(
+    int error_level,
+    const char* file_name,
+    int line_number,
+    const char* message,
+    void* user_data)
+{
+  if (error_level == YARA_ERROR_LEVEL_ERROR)
+  {
+    if (file_name != NULL)
+      printf(
+          "%s(%d): %s\n",
+          file_name,
+          line_number,
+          message);
+    else
+      printf(
+          "line %d: %s\n",
           line_number,
           message);
   }
@@ -1706,7 +1728,7 @@ static PyObject* yara_compile(
 {
   static char *kwlist[] = {
     "filepath", "source", "file", "filepaths", "sources",
-    "includes", "externals", "error_on_warning", NULL};
+    "includes", "externals", "error_on_warning", "continue_on_error", NULL};
 
   YR_COMPILER* compiler;
   YR_RULES* yara_rules;
@@ -1723,7 +1745,8 @@ static PyObject* yara_compile(
   PyObject* includes = NULL;
   PyObject* externals = NULL;
   PyObject* error_on_warning = NULL;
-
+  PyObject* continue_on_error = NULL;
+  
   Py_ssize_t pos = 0;
 
   int fd;
@@ -1736,7 +1759,7 @@ static PyObject* yara_compile(
   if (PyArg_ParseTupleAndKeywords(
         args,
         keywords,
-        "|ssOOOOOO",
+        "|ssOOOOOOO",
         kwlist,
         &filepath,
         &source,
@@ -1745,15 +1768,21 @@ static PyObject* yara_compile(
         &sources_dict,
         &includes,
         &externals,
-        &error_on_warning))
+        &error_on_warning,
+        &continue_on_error))
   {
     error = yr_compiler_create(&compiler);
 
     if (error != ERROR_SUCCESS)
       return handle_error(error, NULL);
-
-    yr_compiler_set_callback(compiler, raise_exception_on_error, NULL);
-
+    if (continue_on_error == Py_True)
+    {
+      yr_compiler_set_callback(compiler, print_exception_on_error, NULL);
+    }
+    else 
+    {
+      yr_compiler_set_callback(compiler, raise_exception_on_error, NULL);
+    }
     if (error_on_warning != NULL)
     {
       if (PyBool_Check(error_on_warning))
